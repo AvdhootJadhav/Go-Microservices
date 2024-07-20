@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -12,8 +11,9 @@ import (
 )
 
 var (
-	services []ServiceRegistrationReq
-	wg       sync.WaitGroup
+	services     = make(map[string]string)
+	wg           sync.WaitGroup
+	healthStatus = make(map[string]bool) // record health status of service
 )
 
 type APIServer struct {
@@ -53,8 +53,7 @@ func register(w http.ResponseWriter, r *http.Request) error {
 		return writeJson(w, map[string]string{"error": err.Error()}, http.StatusInternalServerError)
 	}
 
-	services = append(services, request)
-	log.Printf("%+v\n", services)
+	services[request.Name] = request.BasePath
 	return writeJson(w, map[string]string{"message": "Service registered to the gateway..."}, http.StatusOK)
 }
 
@@ -77,9 +76,9 @@ func monitorServices() {
 		if len(services) == 0 || services == nil {
 			log.Println("No Services are registered yet...")
 		} else {
-			for _, req := range services {
+			for name, path := range services {
 				wg.Add(1)
-				go fetchHealthStatus(req, &wg)
+				go fetchHealthStatus(name, path, &wg)
 			}
 			wg.Wait()
 		}
@@ -87,12 +86,13 @@ func monitorServices() {
 	}
 }
 
-func fetchHealthStatus(req ServiceRegistrationReq, wg *sync.WaitGroup) {
-	response, err := http.Get(req.BasePath /*+ "/health"*/)
+func fetchHealthStatus(name, path string, wg *sync.WaitGroup) {
+	log.Printf("Checking Health for %s Service\n", name)
+	_, err := http.Get(path + "/health")
 	if err != nil {
-		log.Printf("%s service unresponsive due to %s\n", strings.ToUpper(req.Name), err)
+		healthStatus[name] = false
 	} else {
-		log.Printf("Recieved %d from %s service\n", response.StatusCode, strings.ToUpper(req.Name))
+		healthStatus[name] = true
 	}
 	wg.Done()
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 
@@ -20,6 +21,7 @@ func NewServer(address string) APIServer {
 func (server APIServer) Run() {
 	mux := mux.NewRouter()
 	mux.HandleFunc("/health", healthCheck)
+	mux.HandleFunc("/user", makeHttpHandleFunc(getUser))
 
 	log.Println("Listening to port", server.Address)
 	http.ListenAndServe(server.Address, mux)
@@ -27,4 +29,25 @@ func (server APIServer) Run() {
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("User Service is up..."))
+}
+
+func getUser(w http.ResponseWriter, r *http.Request) error {
+	if r.Method == "GET" {
+		return writeJson(w, map[string]string{"name": "Avdhoot", "lastname": "J", "gender": "M"}, 200)
+	}
+	return writeJson(w, map[string]string{"error": "method not allowed"}, http.StatusBadRequest)
+}
+
+func makeHttpHandleFunc(f APIFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := f(w, r); err != nil {
+			writeJson(w, map[string]string{"error": err.Error()}, http.StatusOK)
+		}
+	}
+}
+
+func writeJson(w http.ResponseWriter, data any, status int) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	return json.NewEncoder(w).Encode(data)
 }
