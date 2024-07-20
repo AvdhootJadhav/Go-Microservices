@@ -8,6 +8,10 @@ import (
 	"github.com/gorilla/mux"
 )
 
+var (
+	endpoints = make([]string, 0)
+)
+
 type APIServer struct {
 	Address string
 }
@@ -23,6 +27,10 @@ func (server APIServer) Run() {
 	mux.HandleFunc("/health", healthCheck)
 	mux.HandleFunc("/user", makeHttpHandleFunc(getUser))
 
+	err := mux.Walk(gorillaWalkIn)
+	if err != nil {
+		log.Fatalln(err)
+	}
 	log.Println("Listening to port", server.Address)
 	http.ListenAndServe(server.Address, mux)
 }
@@ -50,4 +58,12 @@ func writeJson(w http.ResponseWriter, data any, status int) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	return json.NewEncoder(w).Encode(data)
+}
+
+func gorillaWalkIn(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+	path, err := route.GetPathTemplate()
+	if err == nil {
+		endpoints = append(endpoints, path)
+	}
+	return err
 }
