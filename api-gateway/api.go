@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -11,7 +12,7 @@ import (
 )
 
 var (
-	services     = make(map[string]string)
+	services     = make(map[string]ServiceRegistrationReq)
 	wg           sync.WaitGroup
 	healthStatus = make(map[string]bool) // record health status of service
 )
@@ -30,6 +31,8 @@ func (server APIServer) Run() {
 	mux := mux.NewRouter()
 	mux.HandleFunc("/health", healthCheck)
 	mux.HandleFunc("/register", makeHttpHandleFunc(register))
+	mux.HandleFunc("/user", makeHttpHandleFunc(fetchUser))
+	mux.HandleFunc("/monitor", makeHttpHandleFunc(fetchHealthData))
 
 	log.Printf("Listening to port %s\n", server.Address)
 
@@ -53,8 +56,33 @@ func register(w http.ResponseWriter, r *http.Request) error {
 		return writeJson(w, map[string]string{"error": err.Error()}, http.StatusInternalServerError)
 	}
 
-	services[request.Name] = request.BasePath
+	services[request.Name] = request
 	return writeJson(w, map[string]string{"message": "Service registered to the gateway..."}, http.StatusOK)
+}
+
+func fetchUser(w http.ResponseWriter, r *http.Request) error {
+	for _, data := range services {
+		for _, paths := range data.Endpoints {
+			if paths == r.URL.Path {
+				response, err := http.Get(data.BasePath + paths)
+				if err != nil {
+					return err
+				}
+				defer response.Body.Close()
+				userData := UserData{}
+				json.NewDecoder(response.Body).Decode(&userData)
+				return writeJson(w, userData, http.StatusOK)
+			}
+		}
+	}
+	return nil
+}
+
+func fetchHealthData(w http.ResponseWriter, r *http.Request) error {
+	if len(healthStatus) == 0 {
+		return fmt.Errorf("No data found")
+	}
+	return writeJson(w, healthStatus, http.StatusOK)
 }
 
 func writeJson(w http.ResponseWriter, data any, status int) error {
@@ -76,9 +104,9 @@ func monitorServices() {
 		if len(services) == 0 || services == nil {
 			log.Println("No Services are registered yet...")
 		} else {
-			for name, path := range services {
+			for name, data := range services {
 				wg.Add(1)
-				go fetchHealthStatus(name, path, &wg)
+				go fetchHealthStatus(name, data.BasePath, &wg)
 			}
 			wg.Wait()
 		}
