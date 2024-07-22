@@ -61,9 +61,12 @@ func register(w http.ResponseWriter, r *http.Request) error {
 }
 
 func fetchUser(w http.ResponseWriter, r *http.Request) error {
+	if len(services) == 0 {
+		return writeJson(w, map[string]string{"error": "Service not found"}, http.StatusInternalServerError)
+	}
 	for _, data := range services {
 		for _, paths := range data.Endpoints {
-			if paths == r.URL.Path {
+			if paths == r.URL.Path && healthStatus[data.Name] {
 				response, err := http.Get(data.BasePath + paths)
 				if err != nil {
 					return err
@@ -72,6 +75,8 @@ func fetchUser(w http.ResponseWriter, r *http.Request) error {
 				userData := UserData{}
 				json.NewDecoder(response.Body).Decode(&userData)
 				return writeJson(w, userData, http.StatusOK)
+			} else {
+				return writeJson(w, map[string]string{"error": "Service is down"}, http.StatusInternalServerError)
 			}
 		}
 	}
